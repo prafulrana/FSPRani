@@ -177,10 +177,15 @@ fragment float4 trackerFragment(VertexOut in [[stage_in]],
             }
         }
         
-        // Add label indicator badge in top-left corner of box
-        float2 badgeCenter = boxMin + float2(0.03, 0.03);
-        float badgeRadius = 0.015;
-        float distToBadge = distance(originalUV, badgeCenter);
+        // Add label indicator badge in top-left corner of box (in screen space for perfect circle)
+        // Transform badge position but keep circular shape
+        float2 screenBoxMin = (boxMin - 0.5) * aspectRatio + 0.5;
+        float2 badgeCenter = screenBoxMin + float2(0.025, 0.025);
+        
+        // Calculate badge distance in screen space to maintain circular shape
+        float2 aspectCorrectedDist = (originalUV - badgeCenter) / aspectRatio;
+        float distToBadge = length(aspectCorrectedDist);
+        float badgeRadius = 0.018;
         
         if (distToBadge < badgeRadius) {
             // Draw solid colored circle badge
