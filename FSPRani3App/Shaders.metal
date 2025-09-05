@@ -31,6 +31,20 @@ vertex VertexOut trackerVertex(uint vid [[vertex_id]]) {
     return out;
 }
 
+// Get label color based on ID
+float3 getLabelColor(int id) {
+    switch(id) {
+        case 1: return float3(0.0, 1.0, 0.3);  // Sports ball - Green
+        case 2: return float3(0.2, 0.6, 1.0);  // Person - Blue
+        case 3: return float3(1.0, 0.8, 0.0);  // Chair - Yellow
+        case 4: return float3(1.0, 0.3, 0.0);  // Skateboard - Orange
+        case 5: return float3(0.8, 0.0, 0.8);  // Knife - Purple
+        case 6: return float3(0.0, 0.8, 0.8);  // TV - Cyan
+        case 7: return float3(0.5, 1.0, 0.0);  // Frisbee - Lime
+        default: return float3(0.7, 0.7, 0.7); // Unknown - Gray
+    }
+}
+
 // Camera + detection overlay fragment shader
 fragment float4 trackerFragment(VertexOut in [[stage_in]],
                                texture2d<float, access::sample> yTexture [[texture(0)]],
@@ -39,7 +53,8 @@ fragment float4 trackerFragment(VertexOut in [[stage_in]],
                                constant float& detectionStrength [[buffer(1)]],
                                constant float2& aspectRatio [[buffer(2)]],
                                constant float4& cropRegion [[buffer(3)]], // Debug: show Vision crop area
-                               constant float& showCrop [[buffer(4)]]) {
+                               constant float& showCrop [[buffer(4)]],
+                               constant int& labelID [[buffer(5)]]) {
     
     constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
     
@@ -135,21 +150,10 @@ fragment float4 trackerFragment(VertexOut in [[stage_in]],
             edgeFactor = max(edgeFactor, 1.0 - smoothstep(0.0, edgeThickness, abs(distToEdge.y)));
         }
         
-        // Choose color with smoother transitions
-        float3 boxColor;
+        // Get color based on detected object type
+        float3 boxColor = getLabelColor(labelID);
         float pulseAmount = sin(detectionStrength * 3.14159) * 0.3 + 0.7; // Gentle pulse
-        
-        if (detectionStrength > 0.85) {
-            // Strong detection - vibrant green with pulse
-            boxColor = float3(0.0, 1.0, 0.3) * pulseAmount;
-        } else if (detectionStrength > 0.6) {
-            // Good detection - softer green to yellow gradient
-            float t = (detectionStrength - 0.6) / 0.25;
-            boxColor = mix(float3(1.0, 0.9, 0.0), float3(0.2, 1.0, 0.2), t) * pulseAmount;
-        } else {
-            // Fading detection - warm orange
-            boxColor = float3(1.0, 0.6, 0.1) * detectionStrength * 2.0;
-        }
+        boxColor *= pulseAmount * (0.5 + detectionStrength * 0.5); // Modulate by confidence
         
         // Apply edge with smooth blending
         if (edgeFactor > 0.0) {
@@ -170,6 +174,22 @@ fragment float4 trackerFragment(VertexOut in [[stage_in]],
             if (innerDist > -innerGlow) {
                 float innerFactor = 1.0 - smoothstep(-innerGlow, 0.0, innerDist);
                 rgb += boxColor * innerFactor * detectionStrength * 0.15;
+            }
+        }
+        
+        // Add label indicator badge in top-left corner of box
+        float2 badgeCenter = boxMin + float2(0.03, 0.03);
+        float badgeRadius = 0.015;
+        float distToBadge = distance(originalUV, badgeCenter);
+        
+        if (distToBadge < badgeRadius) {
+            // Draw solid colored circle badge
+            float badgeFactor = 1.0 - smoothstep(badgeRadius * 0.8, badgeRadius, distToBadge);
+            rgb = mix(rgb, boxColor, badgeFactor * 0.9);
+            
+            // Add white highlight in center for visibility
+            if (distToBadge < badgeRadius * 0.3) {
+                rgb = mix(rgb, float3(1.0, 1.0, 1.0), 0.3);
             }
         }
     }

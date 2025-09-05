@@ -61,6 +61,7 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
     private var currentDetection: VNRecognizedObjectObservation?
     private var detectionConfidence: Float = 0.0
     private var detectionFadeTimer: Float = 0.0
+    private var detectionLabel: String = ""
     private let fadeDecayRate: Float = 0.008 // Much slower fade out for cool lingering effect
     private var smoothedConfidence: Float = 0.0 // For smooth interpolation
     
@@ -77,6 +78,28 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
     
     // Debug mode
     private let debugMode = true  // Set to false to disable debug logs
+    
+    // Map common YOLO labels to IDs for shader
+    private func labelToID(_ label: String) -> Int32 {
+        switch label.lowercased() {
+        case "sports ball", "ball":
+            return 1
+        case "person":
+            return 2
+        case "chair":
+            return 3
+        case "skateboard":
+            return 4
+        case "knife":
+            return 5
+        case "tv", "television", "monitor":
+            return 6
+        case "frisbee":
+            return 7
+        default:
+            return 0 // Unknown
+        }
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -194,6 +217,7 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
                 self?.frameLock.lock()
                 self?.currentDetection = bestDetection
                 self?.detectionConfidence = bestDetection?.confidence ?? 0
+                self?.detectionLabel = bestDetection?.labels.first?.identifier ?? ""
                 if bestDetection != nil {
                     self?.detectionFadeTimer = 1.0
                 }
@@ -405,6 +429,7 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
         // Prepare detection data
         var detectionBox = SIMD4<Float>(0, 0, 0, 0)
         var detectionStrength: Float = 0
+        var detectionLabelID: Int32 = 0
         
         if let detection = detection, fadeTimer > 0 {
             // Vision returns coordinates in the cropped region space (640x640)
@@ -491,6 +516,11 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
             
             // Combine smoothed confidence with fade timer for smooth transitions
             detectionStrength = smoothedConfidence * fadeTimer
+            
+            // Get label ID for shader
+            frameLock.lock()
+            detectionLabelID = labelToID(detectionLabel)
+            frameLock.unlock()
         }
         
         // Single render pass
@@ -517,6 +547,9 @@ class BallTrackerViewController: UIViewController, MTKViewDelegate {
             var showCrop: Float = 0.0 // Disable crop display
             encoder.setFragmentBytes(&cropRegion, length: MemoryLayout<SIMD4<Float>>.size, index: 3)
             encoder.setFragmentBytes(&showCrop, length: MemoryLayout<Float>.size, index: 4)
+            
+            // Pass label ID for display
+            encoder.setFragmentBytes(&detectionLabelID, length: MemoryLayout<Int32>.size, index: 5)
             
             // Draw fullscreen quad
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
